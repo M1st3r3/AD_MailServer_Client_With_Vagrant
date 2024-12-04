@@ -1,0 +1,19 @@
+disable_plaintext_auth = no
+auth_mechanisms = plain login
+
+# Local users
+passdb {
+  driver = passwd-file
+  args = /etc/dovecot/passwd
+}
+
+# AD users
+passdb {
+  driver = ldap
+  args = /etc/dovecot/conf.d/auth-ldap.conf.ext
+}
+
+userdb {
+  driver = static
+  args = uid=vmail gid=vmail home=/var/mail/vhosts/%d/%n
+}

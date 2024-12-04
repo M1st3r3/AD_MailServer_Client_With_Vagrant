@@ -1,0 +1,18 @@
+hosts = {{ ad_server }}
+auth_bind = yes
+ldap_version = 3
+base = {{ ad_base_dn }}
+
+# Bind DN
+dn = {{ ad_bind_dn }}
+dnpass = {{ ad_bind_pw }}
+
+# Authentication - using exact DN format
+auth_bind_userdn = CN=%n,CN=Users,DC=demo,DC=lab
+
+# Search filters
+user_filter = (sAMAccountName=%n)
+pass_filter = (sAMAccountName=%n)
+
+# Debug
+debug_level = 2

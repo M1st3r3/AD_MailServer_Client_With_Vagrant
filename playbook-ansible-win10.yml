@@ -1,0 +1,36 @@
+---
+- name: AD Domain Join for Windows
+  hosts: win10-client
+  vars:
+    domain_name: demo.lab
+    ad_server: 192.168.56.10
+    admin_user: Administrator@demo.lab
+    admin_password: P@ssw0rd
+
+  tasks:
+    - name: Configure DNS settings
+      win_dns_client:
+        adapter_names: '*'
+        ipv4_addresses:
+          - "{{ ad_server }}"
+
+    - name: Ensure hostname is set
+      win_hostname:
+        name: win10-client
+      register: hostname_result
+
+    - name: Join computer to domain
+      win_domain_membership:
+        dns_domain_name: "{{ domain_name }}"
+        domain_admin_user: "{{ admin_user }}"
+        domain_admin_password: "{{ admin_password }}"
+        state: domain
+      register: domain_join
+      notify: reboot_after_join
+
+  handlers:
+    - name: reboot_after_join
+      win_reboot:
+        msg: "Rebooting after domain join"
+        pre_reboot_delay: 15
+        post_reboot_delay: 60

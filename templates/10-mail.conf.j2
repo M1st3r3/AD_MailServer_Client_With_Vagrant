@@ -1,0 +1,21 @@
+mail_location = maildir:/var/mail/vhosts/%d/%n
+mail_privileged_group = mail
+
+namespace inbox {
+  inbox = yes
+  location = maildir:/var/mail/vhosts/%d/%n
+  mailbox Sent {
+    auto = subscribe
+    special_use = \Sent
+  }
+  mailbox Drafts {
+    auto = subscribe
+    special_use = \Drafts
+  }
+  mailbox Trash {
+    auto = subscribe
+    special_use = \Trash
+  }
+}
+
+protocols = imap lmtp

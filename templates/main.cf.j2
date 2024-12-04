@@ -1,0 +1,16 @@
+myhostname = mail.{{ mail_domain }}
+mydomain = {{ mail_domain }}
+myorigin = $mydomain
+inet_interfaces = all
+mydestination = $myhostname, localhost.$mydomain, localhost
+
+# LDAP configuration
+mailbox_transport = lmtp:unix:/var/spool/postfix/private/dovecot-lmtp
+virtual_transport = lmtp:unix:private/dovecot-lmtp
+virtual_mailbox_domains = demo.lab
+
+# Authentication
+smtpd_sasl_type = dovecot
+smtpd_sasl_path = private/auth
+smtpd_sasl_auth_enable = yes
+smtpd_recipient_restrictions = permit_sasl_authenticated,permit_mynetworks,reject_unauth_destination

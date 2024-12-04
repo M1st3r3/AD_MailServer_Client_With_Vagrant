@@ -1,0 +1,175 @@
+---
+- name: Setup Postfix and Dovecot with AD and Local Authentication
+  hosts: ubuntu
+  become: yes
+  vars:
+    mail_domain: demo.lab
+    ad_server: 192.168.56.10
+    ad_base_dn: "dc=demo,dc=lab"
+    ad_bind_dn: "CN=Administrator,CN=Users,DC=demo,DC=lab"
+    ad_bind_pw: "P@ssw0rd"
+    local_mail_password: "P@ssw0rd"  # Password for local test user
+    domain_name: demo.lab
+    admin_user: Administrator
+    admin_password: P@ssw0rd
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - realmd
+          - sssd
+          - sssd-tools
+          - libnss-sss
+          - libpam-sss
+          - adcli
+          - samba-common-bin
+          - oddjob
+          - oddjob-mkhomedir
+          - packagekit
+          - chrony
+          - postfix
+          - dovecot-imapd
+          - dovecot-ldap
+          - postfix-ldap
+          - python3-passlib
+          - dovecot-lmtpd
+        state: present
+
+    - name: Create mail group
+      group:
+        name: vmail
+        gid: 5000
+        state: present
+
+    - name: Create mail user
+      user:
+        name: vmail
+        uid: 5000
+        group: vmail
+        home: /var/mail
+        shell: /sbin/nologin
+        state: present
+
+    - name: Create test local mail user
+      user:
+        name: testmail
+        password: "P@ssw0rd"
+        shell: /sbin/nologin
+        state: present
+
+    - name: Create mail directory
+      file:
+        path: /var/mail/vhosts/demo.lab
+        state: directory
+        mode: '0775'
+        owner: vmail
+        group: vmail
+        recurse: yes
+
+    - name: Configure DNS resolution
+      lineinfile:
+        path: /etc/resolv.conf
+        line: "nameserver {{ ad_server }}"
+        insertbefore: BOF
+
+    - name: Configure Postfix main.cf
+      template:
+        src: main.cf.j2
+        dest: /etc/postfix/main.cf
+      notify: restart postfix
+
+    - name: Configure Dovecot master config
+      template:
+        src: 10-master.conf.j2
+        dest: /etc/dovecot/conf.d/10-master.conf
+      notify: restart dovecot
+
+    - name: Configure Dovecot auth
+      template:
+        src: 10-auth.conf.j2
+        dest: /etc/dovecot/conf.d/10-auth.conf
+      notify: restart dovecot
+
+    - name: Configure Dovecot LDAP
+      template:
+        src: dovecot-ldap.conf.ext.j2
+        dest: /etc/dovecot/conf.d/auth-ldap.conf.ext
+      notify: restart dovecot
+
+    - name: Configure Dovecot mail location
+      template:
+        src: 10-mail.conf.j2
+        dest: /etc/dovecot/conf.d/10-mail.conf
+      notify: restart dovecot
+
+    - name: Create Dovecot password file
+      template:
+        src: passwd.j2
+        dest: /etc/dovecot/passwd
+        mode: '0600'
+        owner: dovecot
+        group: dovecot
+
+    - name: Set correct permissions for postfix private directory
+      file:
+        path: /var/spool/postfix/private
+        state: directory
+        owner: postfix
+        group: postfix
+        mode: '0755'
+
+    - name: Configure chrony for AD time sync
+      template:
+        src: chrony.conf.j2
+        dest: /etc/chrony/chrony.conf
+      notify: restart chrony
+
+    - name: Enable home directory creation
+      command: pam-auth-update --enable mkhomedir
+      changed_when: false
+
+    - name: Enable home directory creation
+      command: pam-auth-update --enable mkhomedir
+      changed_when: false
+
+    - name: Check domain join status
+      command: realm list
+      register: realm_status
+      changed_when: false
+      failed_when: false
+
+    - name: Join AD domain
+      expect:
+        command: realm join -U Administrator demo.lab
+        responses:
+          "Password for Administrator:": "{{ ad_bind_pw }}"
+      when: realm_status.rc != 0 or "demo.lab" not in realm_status.stdout
+      register: join_result
+      failed_when: false
+
+
+  handlers:
+    - name: restart postfix
+      service:
+        name: postfix
+        state: restarted
+
+    - name: restart dovecot
+      service:
+        name: dovecot
+        state: restarted
+
+    - name: restart chrony
+      service:
+        name: chronyd
+        state: restarted
+
+    - name: restart sssd
+      service:
+        name: sssd
+        state: restarted

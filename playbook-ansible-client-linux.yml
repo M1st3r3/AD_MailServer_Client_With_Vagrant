@@ -1,0 +1,75 @@
+---
+- name: AD Domain Join for Linux
+  hosts: client-linux
+  become: yes
+  vars:
+    mail_domain: demo.lab
+    ad_server: 192.168.56.10
+    ad_base_dn: "dc=demo,dc=lab"
+    ad_bind_dn: "CN=Administrator,CN=Users,DC=demo,DC=lab"
+    ad_bind_pw: "P@ssw0rd"
+    local_mail_password: "P@ssw0rd"  # Password for local test user
+    domain_name: demo.lab
+    admin_user: Administrator
+    admin_password: P@ssw0rd
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - realmd
+          - sssd
+          - sssd-tools
+          - libnss-sss
+          - libpam-sss
+          - adcli
+          - samba-common-bin
+          - oddjob
+          - oddjob-mkhomedir
+          - packagekit
+          - chrony
+
+    - name: Configure DNS resolution
+      lineinfile:
+        path: /etc/resolv.conf
+        line: "nameserver {{ ad_server }}"
+        insertbefore: BOF
+
+    - name: Enable home directory creation
+      command: pam-auth-update --enable mkhomedir
+      changed_when: false
+
+    - name: Enable home directory creation
+      command: pam-auth-update --enable mkhomedir
+      changed_when: false
+
+    - name: Check domain join status
+      command: realm list
+      register: realm_status
+      changed_when: false
+      failed_when: false
+
+    - name: Join AD domain
+      expect:
+        command: realm join -U Administrator demo.lab
+        responses:
+          "Password for Administrator:": "{{ ad_bind_pw }}"
+      when: realm_status.rc != 0 or "demo.lab" not in realm_status.stdout
+      register: join_result
+      failed_when: false
+
+
+  handlers:
+    - name: restart chrony
+      service:
+        name: chronyd
+        state: restarted
+
+    - name: restart sssd
+      service:
+        name: sssd
+        state: restarted

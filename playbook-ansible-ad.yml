@@ -1,0 +1,103 @@
+---
+- name: Create new Active-Directory Domain & Forest
+  hosts: ad  # Changed from localhost to match Vagrant config
+  vars:
+    temp_address: 127.0.0.1  # Changed to match Vagrant's default address
+    dc_address: 10.0.2.10  # Example static IP - adjust to your network
+    dc_netmask_cidr: 24
+    dc_gateway: 10.0.2.2  # Adjust to your network
+    dc_hostname: 'dc01'
+    domain_name: "demo.lab"
+    local_admin: 'vagrant'  # Changed to match Vagrant user
+    temp_password: 'vagrant'  # Changed to match Vagrant password
+    dc_password: 'P@ssw0rd'
+    recovery_password: 'P@ssw0rd'
+    upstream_dns_1: 8.8.8.8
+    upstream_dns_2: 8.8.4.4
+    reverse_dns_zone: "10.0.2.0/24"  # Adjust to your network
+    ntp_servers: "0.us.pool.ntp.org,1.us.pool.ntp.org"
+  gather_facts: no
+
+  tasks:
+    # No need for initial add_host task as Vagrant handles initial connection
+
+    - name: Set static IP address
+      win_shell: "(new-netipaddress -InterfaceAlias Ethernet0 -IPAddress {{ dc_address }} -prefixlength {{dc_netmask_cidr}} -defaultgateway {{ dc_gateway }})"
+      ignore_errors: True 
+
+    - name: Set Password
+      win_user:
+        name: administrator
+        password: "{{dc_password}}"
+        state: present
+      ignore_errors: True  
+
+    - name: Set upstream DNS server 
+      win_dns_client:
+        adapter_names: '*'
+        ipv4_addresses:
+        - '{{ upstream_dns_1 }}'
+        - '{{ upstream_dns_2 }}'
+
+    - name: Stop the time service
+      win_service:
+        name: w32time
+        state: stopped
+
+    - name: Set NTP Servers
+      win_shell: 'w32tm /config /syncfromflags:manual /manualpeerlist:"{{ntp_servers}}"'
+
+    - name: Start the time service
+      win_service:
+        name: w32time
+        state: started  
+
+    - name: Disable firewall for Domain, Public and Private profiles
+      win_firewall:
+        state: disabled
+        profiles:
+        - Domain
+        - Private
+        - Public
+
+    - name: Change the hostname 
+      win_hostname:
+        name: '{{ dc_hostname }}'
+      register: res
+
+    - name: Reboot
+      win_reboot:
+      when: res.reboot_required   
+
+    - name: Install Active Directory
+      win_feature:
+        name: AD-Domain-Services
+        include_management_tools: yes
+        include_sub_features: yes
+        state: present
+      register: result
+
+    - name: Create Domain
+      win_domain:
+        dns_domain_name: '{{ domain_name }}'
+        safe_mode_password: '{{ recovery_password }}'
+      register: ad
+
+    - name: reboot server
+      win_reboot:
+        msg: "Installing AD. Rebooting..."
+        pre_reboot_delay: 15
+      when: ad.changed
+
+    - name: Set internal DNS server 
+      win_dns_client:
+        adapter_names: '*'
+        ipv4_addresses:
+        - '127.0.0.1'
+
+    - name: Create reverse DNS zone
+      win_shell: "Add-DnsServerPrimaryZone -NetworkID {{reverse_dns_zone}} -ReplicationScope Forest"
+      retries: 30
+      delay: 60
+      register: result           
+      until: result is succeeded
